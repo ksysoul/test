@@ -62,13 +62,19 @@
         .btn-gray { background: #e8eaed; color: #3c4043; }
         .btn-gray:hover { background: #dadce0; }
 
-        /* 사용방법 단계 */
         .how-to { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
         .how-to h4 { font-size: 15px; color: #1a73e8; margin-bottom: 14px; }
         .how-step { display: flex; align-items: flex-start; margin-bottom: 12px; gap: 12px; }
         .how-num { width: 26px; height: 26px; border-radius: 50%; background: #1a73e8; color: white; font-size: 13px; font-weight: bold; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .how-text { font-size: 13px; color: #3c4043; line-height: 1.5; }
         .how-text strong { color: #1a73e8; }
+
+        /* ✅ 추가된 스타일: 수동 과목 추가 섹션 */
+        .manual-wrap { border-top: 1px dashed #dadce0; margin-top: 10px; padding-top: 16px; text-align: center; }
+        .manual-toggle-btn { background: none; border: 1px solid #5f6368; color: #5f6368; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: bold; transition: 0.2s; }
+        .manual-toggle-btn:hover { background: #f1f3f4; color: #202124; }
+        #manualSection { display: none; margin-top: 14px; text-align: left; }
+        #manualSection .section-title { font-size: 14px; color: #5f6368; }
 
         @media (max-width: 600px) {
             .content { padding: 16px; }
@@ -86,7 +92,6 @@
     </div>
 
     <div class="content">
-        <!-- 진행 단계 표시 -->
         <div class="step-bar">
             <div class="step-item active" id="st1"><div class="step-circle">1</div><div class="step-label">파일 업로드</div></div>
             <div class="step-item" id="st2"><div class="step-circle">2</div><div class="step-label">과목 선택</div></div>
@@ -114,19 +119,30 @@
         <!-- 2단계: 과목 선택 -->
         <div id="subjectSection" class="section">
             <div class="info-box info-blue">
-                💡 <strong>파일 분석 완료!</strong> 아래에서 <strong>평어를 생성할 과목을 선택</strong>하세요.
+                💡 <strong>파일 분석 완료!</strong> 파일에서 찾은 과목 목록입니다. <strong>평어를 생성할 과목을 선택</strong>하세요.
             </div>
-            <div class="section-title">📚 과목 선택</div>
+            <div class="section-title">📚 자동 감지된 과목</div>
+            <!-- ✅ 자동 감지 과목 그리드 -->
             <div class="subject-grid" id="subjectGrid"></div>
-            <div style="text-align:center;">
+
+            <!-- ✅ 추가된 기능: 빠진 과목 수동 추가 -->
+            <div class="manual-wrap">
+                <button class="manual-toggle-btn" onclick="toggleManual()">
+                    ➕ 목록에 없는 과목 추가하기
+                </button>
+                <div id="manualSection">
+                    <div class="section-title" style="margin-top:14px;">📋 전체 과목 목록에서 직접 선택</div>
+                    <div class="subject-grid" id="manualGrid"></div>
+                </div>
+            </div>
+
+            <div style="text-align:center; margin-top:20px;">
                 <button class="btn btn-gray" onclick="location.reload()">🔄 다른 파일 올리기</button>
             </div>
         </div>
 
         <!-- 3단계: 프롬프트 + 사용 방법 -->
         <div id="promptSection" class="section">
-
-            <!-- 사용 방법 안내 -->
             <div class="how-to">
                 <h4>📋 사용 방법 (순서대로 따라하세요!)</h4>
                 <div class="how-step">
@@ -164,15 +180,17 @@
 </div>
 
 <script>
-    const ALL_SUBJECTS = [
+    // ✅ 마스터 과목 목록 (선생님 요청 과목 모두 포함)
+    const MASTER_SUBJECT_LIST = [
         "국어", "도덕", "사회", "수학", "과학", "실과",
         "체육", "음악", "미술", "영어",
         "바른 생활", "슬기로운 생활", "즐거운 생활", "안전한 생활",
-        "역사", "정보"
+        "역사", "정보", "한문",
+        "창의적 체험활동", "질문과 생활", "학교 자율 시간"
     ];
+
     let rawGlobalText = "";
 
-    // 파일 처리
     async function processFile() {
         const file = document.getElementById('fileInput').files[0];
         if (!file) return;
@@ -185,7 +203,6 @@
             const zip = await JSZip.loadAsync(await file.arrayBuffer());
             rawGlobalText = "";
 
-            // 모든 섹션 XML 파일을 번호 순서대로 합치기
             const sectionNames = Object.keys(zip.files)
                 .filter(name => /^Contents\/section\d+\.xml$/.test(name))
                 .sort((a, b) => {
@@ -204,8 +221,7 @@
                 rawGlobalText = await zip.files['Preview/PrvText.txt'].async('string');
             }
 
-            if (rawGlobalText.length < 10)
-                throw new Error("텍스트를 추출할 수 없습니다.");
+            if (rawGlobalText.length < 10) throw new Error("텍스트를 추출할 수 없습니다.");
 
             renderSubjects();
 
@@ -215,25 +231,51 @@
         }
     }
 
-    // 과목 버튼 렌더링
     function renderSubjects() {
         document.getElementById('loading').style.display = 'none';
-        const grid = document.getElementById('subjectGrid');
-        grid.innerHTML = '';
 
-        ALL_SUBJECTS.forEach(subj => {
-            const card = document.createElement('div');
-            card.className = 'subject-card';
-            card.innerText = subj;
-            card.onclick = () => generatePrompt(subj);
-            grid.appendChild(card);
-        });
+        // ✅ 자동 감지: 파일 텍스트 안에 실제로 존재하는 과목만 필터링
+        const autoGrid = document.getElementById('subjectGrid');
+        autoGrid.innerHTML = '';
+        const foundSubjects = MASTER_SUBJECT_LIST.filter(subj => rawGlobalText.includes(subj));
+
+        if (foundSubjects.length > 0) {
+            foundSubjects.forEach(subj => createCard(subj, autoGrid));
+        } else {
+            autoGrid.innerHTML = `<p style="color:#5f6368; font-size:13px; padding:10px 0;">자동으로 감지된 과목이 없습니다. 아래에서 직접 선택해주세요.</p>`;
+        }
+
+        // ✅ 수동 추가: 마스터 목록 전체를 수동 그리드에 표시
+        const manualGrid = document.getElementById('manualGrid');
+        manualGrid.innerHTML = '';
+        MASTER_SUBJECT_LIST.forEach(subj => createCard(subj, manualGrid));
 
         document.getElementById('subjectSection').style.display = 'block';
         setStep(2);
     }
 
-    // 프롬프트 생성 (구글 시트 연동 포함)
+    // ✅ 과목 카드 버튼 생성 헬퍼 함수
+    function createCard(subj, parentEl) {
+        const card = document.createElement('div');
+        card.className = 'subject-card';
+        card.innerText = subj;
+        card.onclick = () => generatePrompt(subj);
+        parentEl.appendChild(card);
+    }
+
+    // ✅ 수동 추가 섹션 토글
+    function toggleManual() {
+        const sec = document.getElementById('manualSection');
+        const btn = document.querySelector('.manual-toggle-btn');
+        if (sec.style.display === 'block') {
+            sec.style.display = 'none';
+            btn.innerText = '➕ 목록에 없는 과목 추가하기';
+        } else {
+            sec.style.display = 'block';
+            btn.innerText = '➖ 전체 목록 닫기';
+        }
+    }
+
     function generatePrompt(subject) {
         const safeText = rawGlobalText.substring(0, 50000);
 
@@ -293,7 +335,6 @@ ${safeText}
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // 복사
     function copyPrompt() {
         const text = document.getElementById('promptText').innerText;
         navigator.clipboard.writeText(text).then(() => {
